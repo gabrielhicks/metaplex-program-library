@@ -124,20 +124,27 @@ pub fn auctioneer_cancel<'info>(
         token_size,
     };
 
+    let mut cpi_account_metas: Vec<AccountMeta> = cpi_accounts
+        .to_account_metas(None)
+        .into_iter()
+        .zip(cpi_accounts.to_account_infos())
+        .map(|mut pair| {
+            pair.0.is_signer = pair.1.is_signer;
+            if pair.0.pubkey == ctx.accounts.auctioneer_authority.key() {
+                pair.0.is_signer = true;
+            }
+            pair.0
+        })
+        .collect();
+
+    cpi_account_metas.append(&mut ctx.remaining_accounts.to_vec().to_account_metas(None));
+
+    let mut cpi_account_infos: Vec<AccountInfo> = cpi_accounts.to_account_infos();
+    cpi_account_infos.append(&mut ctx.remaining_accounts.to_vec());
+
     let ix = solana_program::instruction::Instruction {
         program_id: cpi_program.key(),
-        accounts: cpi_accounts
-            .to_account_metas(None)
-            .into_iter()
-            .zip(cpi_accounts.to_account_infos())
-            .map(|mut pair| {
-                pair.0.is_signer = pair.1.is_signer;
-                if pair.0.pubkey == ctx.accounts.auctioneer_authority.key() {
-                    pair.0.is_signer = true;
-                }
-                pair.0
-            })
-            .collect(),
+        accounts: cpi_account_metas,
         data: cancel_data.data(),
     };
 
@@ -152,7 +159,7 @@ pub fn auctioneer_cancel<'info>(
         &[auctioneer_authority_bump],
     ];
 
-    invoke_signed(&ix, &cpi_accounts.to_account_infos(), &[&auctioneer_seeds])?;
+    invoke_signed(&ix, &cpi_account_infos, &[&auctioneer_seeds])?;
 
     // Close the Listing Config account if the seller is canceling their listing.
     if ctx.accounts.token_account.owner == ctx.accounts.wallet.key()
